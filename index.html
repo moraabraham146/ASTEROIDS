@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asteroid Shooter - Juego de Disparos de Asteroides</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Se ha eliminado el script principal de AdSense -->
+
+    <style>
+        /* Estilos personalizados para el juego */
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400..900&display=swap');
+
+        body {
+            font-family: 'Orbitron', sans-serif;
+            background-color: #0d0d1e;
+        }
+
+        #gameCanvas {
+            border: 2px solid #1e90ff;
+            background-color: #00000a;
+            box-shadow: 0 0 20px rgba(30, 144, 255, 0.5);
+            touch-action: none; /* Previene el comportamiento del navegador en dispositivos táctiles */
+        }
+
+        .game-text {
+            color: #00ffff;
+            text-shadow: 0 0 5px #00ffff;
+        }
+
+        .control-button {
+            transition: all 0.1s;
+            background-color: #1e90ff;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            padding: 0.5rem 1rem;
+            margin: 0.25rem;
+            border-radius: 9999px;
+            box-shadow: 0 4px 0 #146eb4;
+            user-select: none;
+            -webkit-user-select: none;
+            -ms-user-select: none;
+        }
+
+        .control-button:active {
+            box-shadow: 0 0 0 #146eb4;
+            transform: translateY(4px);
+        }
+
+        /* Estilo para el indicador de autenticación */
+        #auth-status {
+            font-size: 0.75rem;
+            color: #00ffff;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.375rem;
+            background-color: rgba(30, 144, 255, 0.1);
+        }
+
+        /* Estilos específicos para la nave y los elementos del juego */
+        .ship-color { fill: #00ff00; }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-2 md:p-4">
+
+    <!-- Se ha eliminado el PUNTO DE ANUNCIO 1: Banner Superior -->
+
+    <!-- Encabezado y Puntuación -->
+    <div class="w-full max-w-lg flex justify-between items-center mb-4 p-2 rounded-lg bg-gray-900 shadow-xl">
+        <h1 class="text-3xl font-extrabold game-text">ASTEROIDS</h1>
+        <div class="text-right">
+            <p class="text-xl game-text">Puntuación: <span id="score">0</span></p>
+            <div id="auth-status">Cargando Auth...</div>
+        </div>
+    </div>
+
+    <!-- Contenedor del Canvas del Juego -->
+    <div class="relative w-full max-w-lg aspect-square">
+        <canvas id="gameCanvas" class="w-full h-full rounded-xl"></canvas>
+    </div>
+
+    <!-- Controles Táctiles (Visibles en dispositivos móviles) -->
+    <div id="touchControls" class="w-full max-w-lg mt-4 flex flex-col items-center">
+        <!-- Fila de Movimiento y Giro -->
+        <div class="flex justify-center w-full mb-3">
+            <button class="control-button w-1/4 mr-2" data-action="left">⟲</button>
+            <button class="control-button w-1/4 mr-2" data-action="thrust">▲</button>
+            <button class="control-button w-1/4" data-action="right">⟳</button>
+        </div>
+        <!-- Botón de Disparo -->
+        <button class="control-button w-3/4 bg-red-600 shadow-red-900 active:shadow-none" data-action="shoot">FUEGO / DISPARAR</button>
+    </div>
+
+    <!-- Contenedor para mensajes (Game Over) -->
+    <div id="messageBox" class="absolute inset-0 flex items-center justify-center hidden bg-black bg-opacity-70 rounded-xl max-w-lg mx-auto" style="top: 50%; left: 50%; transform: translate(-50%, -50%); height: 50%; max-width: 90%; z-index: 10;">
+        <div class="text-center p-6 bg-gray-800 rounded-lg shadow-2xl border-4 border-red-500">
+            <h2 id="messageTitle" class="text-4xl font-bold mb-4 game-text text-red-400">¡JUEGO TERMINADO!</h2>
+            <p id="messageText" class="text-xl game-text mb-6">Tu puntuación final es: <span id="finalScore" class="font-bold">0</span></p>
+            
+            <!-- Se ha eliminado el PUNTO DE ANUNCIO 2: Dentro de la pantalla de Game Over -->
+
+            <button id="restartButton" class="control-button bg-green-500 shadow-green-800 active:shadow-none hover:bg-green-600">Jugar de Nuevo</button>
+        </div>
+    </div>
+
+    <!-- PUNTO DE ANUNCIO 3: Banner Inferior (AdSense) -->
+    <!-- Anuncio insertado por solicitud del autor. Requiere verificación del dominio en AdSense para mostrarse en producción. -->
+    <div id="ad-footer" class="w-full max-w-lg mt-6 flex justify-center">
+        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7949714288717188"
+            crossorigin="anonymous"></script>
+        <!-- Anuncio Horizontal -->
+        <ins class="adsbygoogle"
+            style="display:block"
+            data-ad-client="ca-pub-7949714288717188"
+            data-ad-slot="3807203474"
+            data-ad-format="auto"
+            data-full-width-responsive="true"></ins>
+        <script>
+            (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+    </div>
+    
+    <script type="module">
+        // Importaciones de Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Configuración y Variables Globales de Firebase
+        setLogLevel('Debug');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let app, db, auth, userId = null;
+        let isAuthReady = false;
+
+        // Inicializar Firebase
+        if (firebaseConfig) {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+
+            // Manejar Autenticación
+            const authenticate = async () => {
+                try {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (error) {
+                    console.error("Error durante la autenticación:", error);
+                    document.getElementById('auth-status').textContent = 'Error Auth';
+                }
+            };
+
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    userId = user.uid;
+                    document.getElementById('auth-status').textContent = `ID: ${userId.substring(0, 8)}...`;
+                    isAuthReady = true;
+                    console.log("Usuario autenticado. UID:", userId);
+                    // Una vez que la autenticación está lista, podemos empezar a observar/escribir datos si fuera necesario.
+                } else {
+                    document.getElementById('auth-status').textContent = 'Anon/Error';
+                    userId = crypto.randomUUID(); // Usar un ID anónimo si falla la auth
+                    isAuthReady = true;
+                    console.log("No user authenticated. Using random UUID.");
+                }
+            });
+
+            authenticate();
+        } else {
+            console.warn("Firebase config not available. Running game without persistence.");
+            userId = crypto.randomUUID();
+            isAuthReady = true;
+            document.getElementById('auth-status').textContent = 'Sin Base de Datos';
+        }
+
+        // --- Lógica del Juego ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Ajustar el tamaño del canvas para que sea un cuadrado perfecto basado en el ancho del contenedor
+        const resizeCanvas = () => {
+            const container = canvas.parentElement;
+            const size = Math.min(container.clientWidth, container.clientHeight);
+            canvas.width = size;
+            canvas.height = size;
+        };
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Constantes del Juego
+        const FPS = 30;
+        const SHIP_SIZE = 20; // Tamaño de la nave (desde el centro hasta la punta)
+        const TURN_SPEED = 360; // Grados por segundo
+        const THRUST = 5; // Aceleración de la nave
+        const FRICTION = 0.7; // Fricción del espacio (0 = sin fricción, 1 = fricción total)
+        const MAX_VELOCITY = 10;
+        const BULLET_SPEED = 500; // Píxeles por segundo
+        const BULLET_MAX_AGE = 0.6; // Segundos
+        const ASTEROID_COUNT = 5;
+        const ASTEROID_SIZE = 100;
+        const ASTEROID_VERTICES = 10;
+        const ASTEROID_JAG = 0.4; // 0 = suave, 1 = dentado
+        const ASTEROID_SPEED_MAX = 50; // Píxeles por segundo
+        const ASTEROID_POINTS_LARGE = 100;
+        const ASTEROID_POINTS_MEDIUM = 50;
+        const ASTEROID_POINTS_SMALL = 20;
+
+        // Variables del Juego
+        let ship;
+        let bullets = [];
+        let asteroids = [];
+        let score = 0;
+        let gameTime = 0;
+        let gameOver = false;
+        let lastTime = 0;
+        let keysDown = {}; // Estado de las teclas presionadas
+
+        // Objeto Nave
+        function Ship() {
+            this.x = canvas.width / 2;
+            this.y = canvas.height / 2;
+            this.r = SHIP_SIZE / 2;
+            this.a = 90 / 180 * Math.PI; // Ángulo inicial (hacia arriba)
+            this.thrusting = false;
+            this.exploding = false;
+            this.explodeTime = 0;
+            this.blinkOn = true; // Para invulnerabilidad temporal
+            this.invulnerability = 3; // Segundos de invulnerabilidad
+            this.xv = 0; // Velocidad X
+            this.yv = 0; // Velocidad Y
+        }
+
+        Ship.prototype.draw = function() {
+            if (this.exploding) {
+                // Dibujar explosión (círculos expansivos)
+                const radius = (this.r * 2) * (this.explodeTime / 0.5);
+                ctx.fillStyle = "darkred";
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, radius, 0, Math.PI * 2, false);
+                ctx.fill();
+                return;
+            }
+
+            // Dibujar nave (solo si no es invulnerable o si el parpadeo está encendido)
+            if (this.invulnerability === 0 || this.blinkOn) {
+                ctx.strokeStyle = "lime";
+                ctx.lineWidth = SHIP_SIZE / 10;
+                ctx.beginPath();
+                // Nariz de la nave
+                ctx.moveTo(
+                    this.x + 4 / 3 * this.r * Math.cos(this.a),
+                    this.y - 4 / 3 * this.r * Math.sin(this.a)
+                );
+                // Parte trasera derecha
+                ctx.lineTo(
+                    this.x - this.r * (Math.cos(this.a) + Math.sin(this.a)),
+                    this.y + this.r * (Math.sin(this.a) - Math.cos(this.a))
+                );
+                // Parte trasera izquierda
+                ctx.lineTo(
+                    this.x - this.r * (Math.cos(this.a) - Math.sin(this.a)),
+                    this.y + this.r * (Math.sin(this.a) + Math.cos(this.a))
+                );
+                ctx.closePath();
+                ctx.stroke();
+
+                // Dibujar propulsor si está acelerando
+                if (this.thrusting) {
+                    ctx.fillStyle = "red";
+                    ctx.strokeStyle = "yellow";
+                    ctx.lineWidth = SHIP_SIZE / 20;
+                    ctx.beginPath();
+                    ctx.moveTo( // Cola central
+                        this.x - this.r * (Math.cos(this.a) * 1.5),
+                        this.y + this.r * (Math.sin(this.a) * 1.5)
+                    );
+                    ctx.lineTo( // Punta izquierda del fuego
+                        this.x - this.r * (Math.cos(this.a) + Math.sin(this.a) * 0.7),
+                        this.y + this.r * (Math.sin(this.a) - Math.cos(this.a) * 0.7)
+                    );
+                    ctx.lineTo( // Punta derecha del fuego
+                        this.x - this.r * (Math.cos(this.a) - Math.sin(this.a) * 0.7),
+                        this.y + this.r * (Math.sin(this.a) + Math.cos(this.a) * 0.7)
+                    );
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                }
+            }
+        };
+
+        Ship.prototype.move = function(dt) {
+            // Rotación
+            if (keysDown['left']) {
+                this.a += TURN_SPEED / 180 * Math.PI * dt;
+            } else if (keysDown['right']) {
+                this.a -= TURN_SPEED / 180 * Math.PI * dt;
+            }
+
+            // Aceleración
+            if (keysDown['thrust']) {
+                this.thrusting = true;
+                this.xv += THRUST * Math.cos(this.a) * dt;
+                this.yv -= THRUST * Math.sin(this.a) * dt;
+            } else {
+                this.thrusting = false;
+            }
+
+            // Fricción
+            this.xv *= (1 - FRICTION * dt * 2);
+            this.yv *= (1 - FRICTION * dt * 2);
+
+            // Límite de velocidad
+            const velocity = Math.sqrt(this.xv * this.xv + this.yv * this.yv);
+            if (velocity > MAX_VELOCITY) {
+                const ratio = MAX_VELOCITY / velocity;
+                this.xv *= ratio;
+                this.yv *= ratio;
+            }
+
+            // Mover la nave
+            this.x += this.xv;
+            this.y += this.yv;
+
+            // Invulnerabilidad (parpadeo)
+            if (this.invulnerability > 0) {
+                this.invulnerability -= dt;
+                if (this.invulnerability <= 0) {
+                    this.invulnerability = 0;
+                    this.blinkOn = true; // Asegura que se vea al final
+                }
+                // Toggle blink every 0.1s
+                this.blinkOn = Math.floor(this.invulnerability * 10) % 2 === 0;
+            }
+
+            // Bucle alrededor de los bordes del canvas
+            if (this.x < 0 - this.r) {
+                this.x = canvas.width + this.r;
+            } else if (this.x > canvas.width + this.r) {
+                this.x = 0 - this.r;
+            }
+            if (this.y < 0 - this.r) {
+                this.y = canvas.height + this.r;
+            } else if (this.y > canvas.height + this.r) {
+                this.y = 0 - this.r;
+            }
+        };
+
+        Ship.prototype.shoot = function() {
+            if (this.exploding || this.invulnerability > 0) return;
+
+            const bullet = new Bullet(this.x, this.y, this.a);
+            bullets.push(bullet);
+        };
+
+        Ship.prototype.die = function(dt) {
+            if (this.invulnerability > 0) return;
+
+            this.exploding = true;
+            this.explodeTime = 0;
+            // Detener movimiento
+            this.xv = 0;
+            this.yv = 0;
+        }
+
+        // Objeto Bala
+        function Bullet(x, y, a) {
+            this.x = x + 4 / 3 * ship.r * Math.cos(a);
+            this.y = y - 4 / 3 * ship.r * Math.sin(a);
+            this.xv = BULLET_SPEED * Math.cos(a) / FPS + ship.xv;
+            this.yv = -BULLET_SPEED * Math.sin(a) / FPS + ship.yv;
+            this.r = 2; // Radio de la bala
+            this.life = BULLET_MAX_AGE;
+        }
+
+        Bullet.prototype.draw = function() {
+            ctx.fillStyle = "red";
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2, false);
+            ctx.fill();
+        };
+
+        Bullet.prototype.move = function(dt) {
+            this.x += this.xv * dt * FPS;
+            this.y += this.yv * dt * FPS;
+            this.life -= dt;
+        };
+
+        // Objeto Asteroide
+        function Asteroid(x, y, r) {
+            this.x = x;
+            this.y = y;
+            this.r = r;
+            this.a = Math.random() * Math.PI * 2; // Ángulo de dirección
+            // Velocidad aleatoria
+            const vel = Math.random() * ASTEROID_SPEED_MAX + ASTEROID_SPEED_MAX * 0.5;
+            this.xv = vel * Math.cos(this.a) / FPS;
+            this.yv = vel * Math.sin(this.a) / FPS;
+            this.offs = []; // Desplazamientos para la forma irregular
+            for (let i = 0; i < ASTEROID_VERTICES; i++) {
+                this.offs.push(Math.random() * ASTEROID_JAG * 2 + 1 - ASTEROID_JAG);
+            }
+        }
+
+        Asteroid.prototype.draw = function() {
+            ctx.strokeStyle = "gray";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+
+            for (let i = 0; i < ASTEROID_VERTICES; i++) {
+                const angle = i * Math.PI * 2 / ASTEROID_VERTICES;
+                const offset = this.offs[i] * this.r;
+                const px = this.x + offset * Math.cos(angle);
+                const py = this.y + offset * Math.sin(angle);
+
+                if (i === 0) {
+                    ctx.moveTo(px, py);
+                } else {
+                    ctx.lineTo(px, py);
+                }
+            }
+            ctx.closePath();
+            ctx.stroke();
+        };
+
+        Asteroid.prototype.move = function(dt) {
+            this.x += this.xv * dt * FPS;
+            this.y += this.yv * dt * FPS;
+
+            // Bucle alrededor de los bordes del canvas
+            if (this.x < 0 - this.r) {
+                this.x = canvas.width + this.r;
+            } else if (this.x > canvas.width + this.r) {
+                this.x = 0 - this.r;
+            }
+            if (this.y < 0 - this.r) {
+                this.y = canvas.height + this.r;
+            } else if (this.y > canvas.height + this.r) {
+                this.y = 0 - this.r;
+            }
+        };
+
+        // Función para crear un asteroide grande
+        function createAsteroid() {
+            let x, y;
+            do {
+                // Generar posición aleatoria cerca del borde
+                if (Math.random() < 0.5) {
+                    x = Math.random() < 0.5 ? 0 - ASTEROID_SIZE : canvas.width + ASTEROID_SIZE;
+                    y = Math.random() * canvas.height;
+                } else {
+                    x = Math.random() * canvas.width;
+                    y = Math.random() < 0.5 ? 0 - ASTEROID_SIZE : canvas.height + ASTEROID_SIZE;
+                }
+            } while (Math.hypot(x - ship.x, y - ship.y) < ASTEROID_SIZE * 2 + ship.r); // Evitar generar cerca de la nave
+
+            return new Asteroid(x, y, ASTEROID_SIZE);
+        }
+
+        // --- Inicialización del Juego ---
+        function newGame() {
+            ship = new Ship();
+            bullets = [];
+            asteroids = [];
+            score = 0;
+            gameOver = false;
+            gameTime = 0;
+            keysDown = {};
+            document.getElementById('messageBox').classList.add('hidden');
+            document.getElementById('score').textContent = score;
+
+            // Generar asteroides iniciales
+            for (let i = 0; i < ASTEROID_COUNT; i++) {
+                asteroids.push(createAsteroid());
+            }
+
+            // Iniciar el ciclo de juego
+            // FIX: Se elimina la condición 'if (lastTime === 0)' y se reinicia lastTime.
+            // Esto asegura que el bucle de requestAnimationFrame se reactive después del Game Over.
+            lastTime = performance.now();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function restartGame() {
+            newGame();
+        }
+
+        // --- Ciclo Principal del Juego ---
+        function gameLoop(currentTime) {
+            const dt = (currentTime - lastTime) / 1000; // Delta Time en segundos
+            lastTime = currentTime;
+
+            if (gameOver) {
+                // Dibujar el estado final una vez antes de detener el bucle
+                // 2. Dibujo (Draw)
+                ctx.fillStyle = "#00000a";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                asteroids.forEach(asteroid => asteroid.draw());
+                bullets.forEach(bullet => bullet.draw());
+                ship.draw();
+
+                // Mostrar la pantalla de Game Over
+                document.getElementById('finalScore').textContent = score;
+                document.getElementById('messageBox').classList.remove('hidden');
+                return; // Detener el bucle, ya no llama a requestAnimationFrame(gameLoop)
+            }
+
+            // 1. Lógica de Actualización (Update)
+            ship.move(dt);
+
+            // Actualizar balas y limpiar balas muertas
+            bullets = bullets.filter(bullet => {
+                bullet.move(dt);
+                // La bala se muere si su tiempo de vida es < 0 o sale del canvas
+                const isOffScreen = bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height;
+                return bullet.life > 0 && !isOffScreen;
+            });
+
+            // Mover asteroides
+            asteroids.forEach(asteroid => asteroid.move(dt));
+
+            // Detección de Colisiones
+            const newAsteroids = [];
+
+            for (let i = asteroids.length - 1; i >= 0; i--) {
+                const asteroid = asteroids[i];
+                let asteroidHit = false;
+
+                // Colisión Bala-Asteroide
+                for (let j = bullets.length - 1; j >= 0; j--) {
+                    const bullet = bullets[j];
+
+                    const dist = Math.hypot(asteroid.x - bullet.x, asteroid.y - bullet.y);
+
+                    if (dist < asteroid.r) {
+                        // ¡Impacto!
+                        asteroidHit = true;
+                        bullets.splice(j, 1); // Remover bala
+
+                        // Romper asteroide
+                        if (asteroid.r > ASTEROID_SIZE / 4) {
+                            // Crear 2 asteroides más pequeños
+                            const newR = asteroid.r / 2;
+                            let newA1 = new Asteroid(asteroid.x, asteroid.y, newR);
+                            let newA2 = new Asteroid(asteroid.x, asteroid.y, newR);
+                            newA1.xv += Math.cos(newA1.a) * 10 / FPS; // Separación
+                            newA2.xv -= Math.cos(newA2.a) * 10 / FPS;
+                            newAsteroids.push(newA1, newA2);
+                        }
+
+                        // Actualizar puntuación
+                        if (asteroid.r === ASTEROID_SIZE) {
+                            score += ASTEROID_POINTS_LARGE;
+                        } else if (asteroid.r === ASTEROID_SIZE / 2) {
+                            score += ASTEROID_POINTS_MEDIUM;
+                        } else {
+                            score += ASTEROID_POINTS_SMALL;
+                        }
+                        document.getElementById('score').textContent = score;
+
+                        break; // Salir del bucle de balas, el asteroide fue golpeado
+                    }
+                }
+
+                if (asteroidHit) {
+                    asteroids.splice(i, 1); // Remover asteroide golpeado
+                } else {
+                    // Colisión Nave-Asteroide (solo si la nave no está explotando/invulnerable)
+                    if (!ship.exploding && ship.invulnerability === 0) {
+                        const dist = Math.hypot(asteroid.x - ship.x, asteroid.y - ship.y);
+
+                        if (dist < asteroid.r + ship.r) {
+                            ship.die(dt);
+                            gameOver = true;
+                        }
+                    }
+                }
+            }
+
+            // Agregar nuevos asteroides
+            asteroids.push(...newAsteroids);
+
+            // Generar nuevos asteroides si el campo está vacío
+            if (asteroids.length === 0) {
+                for (let i = 0; i < ASTEROID_COUNT * 2; i++) {
+                    asteroids.push(createAsteroid());
+                }
+            }
+
+
+            // 2. Dibujo (Draw)
+            // Fondo
+            ctx.fillStyle = "#00000a";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Dibujar asteroides
+            asteroids.forEach(asteroid => asteroid.draw());
+
+            // Dibujar balas
+            bullets.forEach(bullet => bullet.draw());
+
+            // Dibujar nave
+            ship.draw();
+
+            // 3. Re-bucle
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- Manejo de Entrada (Teclado) ---
+        document.addEventListener('keydown', (e) => {
+            if (gameOver) return;
+            switch (e.key) {
+                case 'ArrowLeft':
+                case 'a':
+                    keysDown['left'] = true;
+                    e.preventDefault();
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                    keysDown['right'] = true;
+                    e.preventDefault();
+                    break;
+                case 'ArrowUp':
+                case 'w':
+                    keysDown['thrust'] = true;
+                    e.preventDefault();
+                    break;
+                case ' ':
+                    keysDown['shoot'] = true;
+                    e.preventDefault();
+                    break;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (gameOver) return;
+            switch (e.key) {
+                case 'ArrowLeft':
+                case 'a':
+                    keysDown['left'] = false;
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                    keysDown['right'] = false;
+                    break;
+                case 'ArrowUp':
+                case 'w':
+                    keysDown['thrust'] = false;
+                    break;
+                case ' ':
+                    if (keysDown['shoot']) {
+                        ship.shoot();
+                    }
+                    keysDown['shoot'] = false;
+                    break;
+            }
+        });
+
+        // --- Manejo de Entrada (Táctil/Touch) ---
+        const touchControls = document.getElementById('touchControls');
+
+        const setKeyState = (action, isPressed) => {
+            if (gameOver) return;
+            switch (action) {
+                case 'left':
+                case 'right':
+                case 'thrust':
+                    keysDown[action] = isPressed;
+                    break;
+                case 'shoot':
+                    if (isPressed) {
+                        ship.shoot();
+                    }
+                    // No mantenemos el estado de 'shoot' como true para evitar disparos automáticos
+                    break;
+            }
+        };
+
+        const handleTouchStart = (e) => {
+            const action = e.currentTarget.getAttribute('data-action');
+            setKeyState(action, true);
+        };
+
+        const handleTouchEnd = (e) => {
+            const action = e.currentTarget.getAttribute('data-action');
+            if (action !== 'shoot') {
+                setKeyState(action, false);
+            }
+        };
+
+        // Asignar listeners a los botones
+        touchControls.querySelectorAll('.control-button').forEach(button => {
+            button.addEventListener('touchstart', handleTouchStart);
+            button.addEventListener('touchend', handleTouchEnd);
+            button.addEventListener('mousedown', handleTouchStart); // Soporte para click de ratón
+            button.addEventListener('mouseup', handleTouchEnd);
+            button.addEventListener('mouseleave', (e) => { // Previene que se quede pegado si se arrastra
+                const action = e.currentTarget.getAttribute('data-action');
+                if (action !== 'shoot') {
+                    setKeyState(action, false);
+                }
+            });
+        });
+
+        // Inicio del juego al cargar la ventana
+        window.onload = function() {
+            // Aseguramos que el canvas se ajuste al tamaño correcto
+            resizeCanvas();
+            // Esperamos la inicialización de Auth antes de arrancar el juego, aunque no es estrictamente necesario para la jugabilidad.
+            const checkAuth = setInterval(() => {
+                if (isAuthReady) {
+                    clearInterval(checkAuth);
+                    newGame();
+                    // FIX: Asignamos el listener del botón de reinicio aquí para asegurar el alcance del módulo.
+                    document.getElementById('restartButton').addEventListener('click', restartGame);
+                }
+            }, 100);
+        };
+    </script>
+</body>
+</html>
